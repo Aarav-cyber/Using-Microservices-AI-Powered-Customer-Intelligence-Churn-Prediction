@@ -7,9 +7,10 @@ def recommend_retention_action(
     if not 0 <= churn_probability <= 1:
         raise ValueError("churn_probability must be between 0 and 1")
 
-    if churn_probability >= 0.75:
+    # Keep thresholds aligned with the Churn Prediction API.
+    if churn_probability >= 0.7:
         risk = "high"
-    elif churn_probability >= 0.45:
+    elif churn_probability >= 0.4:
         risk = "medium"
     else:
         risk = "low"
@@ -19,13 +20,13 @@ def recommend_retention_action(
     if risk == "high":
         actions.append("Prioritize a customer-success outreach.")
 
-    if contract.lower() == "month-to-month":
+    if contract.strip().lower() == "month-to-month":
         actions.append("Offer suitable longer-term plans for review.")
 
-    if tech_support.lower() == "no":
+    if tech_support.strip().lower() == "no":
         actions.append("Offer a technical-support walkthrough.")
 
-    if sentiment == "negative":
+    if sentiment and sentiment.strip().lower() == "negative":
         actions.append("Review recent feedback and address the complaint.")
 
     if not actions:
