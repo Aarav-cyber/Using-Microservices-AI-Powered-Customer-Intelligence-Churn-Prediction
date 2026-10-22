@@ -110,6 +110,29 @@ services:
       - ./services/churn_prediction/model:/models:ro
     restart: unless-stopped
 
+  retention:
+    build:
+      context: ./services/retention
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "127.0.0.1:8005:8005"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification-worker:
+    build:
+      context: ./services/retention
+    command: ["python", "-m", "app.notification_worker"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   kafka_data:
