@@ -99,6 +99,17 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  churn-prediction:
+    build:
+      context: ./services/churn_prediction
+    environment:
+      MODEL_PATH: /models/churn_model.joblib
+    ports:
+      - "127.0.0.1:8004:8004"
+    volumes:
+      - ./services/churn_prediction/model:/models:ro
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   kafka_data:
