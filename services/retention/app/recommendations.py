@@ -1,13 +1,21 @@
 def recommend_retention_action(
     churn_probability: float,
-    contract: str,
-    tech_support: str,
+    plan_tier: str,
+    support_tickets_90d: int,
     sentiment: str | None = None,
 ) -> dict:
     if not 0 <= churn_probability <= 1:
         raise ValueError("churn_probability must be between 0 and 1")
 
-    # Keep thresholds aligned with the Churn Prediction API.
+    if support_tickets_90d < 0:
+        raise ValueError("support_tickets_90d cannot be negative")
+
+    plan = plan_tier.strip().lower()
+
+    valid_plans = {"free", "starter", "professional", "enterprise"}
+    if plan not in valid_plans:
+        raise ValueError(f"Unsupported plan_tier: {plan_tier}")
+
     if churn_probability >= 0.7:
         risk = "high"
     elif churn_probability >= 0.4:
@@ -18,19 +26,32 @@ def recommend_retention_action(
     actions = []
 
     if risk == "high":
-        actions.append("Prioritize a customer-success outreach.")
+        actions.append("Prioritize customer-success outreach.")
 
-    if contract.strip().lower() == "month-to-month":
-        actions.append("Offer suitable longer-term plans for review.")
-
-    if tech_support.strip().lower() == "no":
-        actions.append("Offer a technical-support walkthrough.")
+    if support_tickets_90d >= 3:
+        actions.append(
+            "Review recent support tickets and resolve recurring issues."
+        )
 
     if sentiment and sentiment.strip().lower() == "negative":
-        actions.append("Review recent feedback and address the complaint.")
+        actions.append(
+            "Review recent feedback and address the customer's concerns."
+        )
+
+    if plan == "free" and risk in {"high", "medium"}:
+        actions.append(
+            "Offer relevant product guidance and explain suitable plan options."
+        )
+
+    if plan in {"professional", "enterprise"} and risk in {"high", "medium"}:
+        actions.append(
+            "Arrange a personalized account review with customer success."
+        )
 
     if not actions:
-        actions.append("Continue normal engagement and monitor customer activity.")
+        actions.append(
+            "Continue normal engagement and monitor customer activity."
+        )
 
     return {
         "risk_level": risk,
