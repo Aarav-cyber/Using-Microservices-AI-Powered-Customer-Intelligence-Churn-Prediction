@@ -16,6 +16,12 @@ class Feedback(Base):
         default=lambda: str(uuid.uuid4()),
     )
 
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        index=True,
+        nullable=False,
+    )
+
     customer_id: Mapped[str] = mapped_column(
         String(36),
         index=True,

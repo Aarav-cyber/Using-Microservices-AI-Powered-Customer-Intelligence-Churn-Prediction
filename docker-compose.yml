@@ -75,11 +75,14 @@ services:
     environment:
       DATABASE_URL: sqlite:////data/feedback.db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CUSTOMER_PROFILE_URL: http://customer-profile:8001
     ports:
       - "127.0.0.1:8002:8002"
     volumes:
       - feedback_data:/data
     depends_on:
+      customer-profile:
+        condition: service_started
       kafka:
         condition: service_healthy
     restart: unless-stopped
