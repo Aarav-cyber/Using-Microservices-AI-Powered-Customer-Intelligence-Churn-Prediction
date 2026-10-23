@@ -17,6 +17,15 @@ MODEL_PATH = Path(
     )
 )
 
+VALID_PLANS = {"free", "starter", "professional", "enterprise"}
+FEATURES = [
+    "account_age_days",
+    "monthly_price_usd",
+    "support_tickets_90d",
+    "days_since_last_login",
+    "plan_tier",
+]
+
 model = None
 
 
@@ -27,28 +36,27 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Model file not found at {MODEL_PATH}")
     else:
         model = joblib.load(MODEL_PATH)
-        print(f"Loaded churn prediction model from {MODEL_PATH}")
+        print(f"Loaded SaaS churn prediction model from {MODEL_PATH}")
     yield
 
 
 app = FastAPI(
     title="Churn Prediction Service",
-    description="Estimates customer churn probability based on historical features.",
-    version="1.0.0",
+    description=(
+        "Predicts customer churn probability using "
+        "SaaS account and engagement features."
+    ),
+    version="2.0.0",
     lifespan=lifespan,
 )
 
 
 class ChurnRequest(BaseModel):
-    tenure: int = Field(ge=0, le=1000, description="Tenure in months")
-    monthly_charges: float = Field(ge=0, le=100000, description="Monthly charges")
-    total_charges: float = Field(ge=0, le=10000000, description="Total charges")
-    contract: str = Field(description="Contract type e.g. Month-to-month, One year, Two year")
-    internet_service: str = Field(description="Internet service e.g. DSL, Fiber optic, No")
-    tech_support: str = Field(description="Tech support e.g. Yes, No, No internet service")
-    online_security: str = Field(description="Online security e.g. Yes, No, No internet service")
-    payment_method: str = Field(description="Payment method e.g. Electronic check, Mailed check, Bank transfer (automatic), Credit card (automatic)")
-    paperless_billing: str = Field(description="Paperless billing e.g. Yes, No")
+    account_age_days: int = Field(ge=0, le=100000)
+    monthly_price_usd: float = Field(ge=0, le=1000000)
+    support_tickets_90d: int = Field(ge=0, le=10000)
+    days_since_last_login: int = Field(ge=0, le=100000)
+    plan_tier: str
 
 
 class ChurnResponse(BaseModel):
@@ -60,9 +68,10 @@ class ChurnResponse(BaseModel):
 @app.get("/health")
 def health():
     return {
-        "status": "ok",
+        "status": "ok" if model is not None else "unavailable",
         "service": "churn-prediction",
         "model_loaded": model is not None,
+        "model_type": "saas",
     }
 
 
@@ -74,40 +83,49 @@ def predict_churn(payload: ChurnRequest):
     if model is None:
         raise HTTPException(
             status_code=503,
-            detail="Prediction model is not loaded",
+            detail="SaaS churn prediction model is not loaded.",
+        )
+
+    plan = payload.plan_tier.strip().lower()
+    if plan not in VALID_PLANS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unsupported plan_tier '{payload.plan_tier}'. "
+                f"Expected one of: {sorted(VALID_PLANS)}"
+            ),
         )
 
     input_data = {
-        "tenure": payload.tenure,
-        "MonthlyCharges": payload.monthly_charges,
-        "TotalCharges": payload.total_charges,
-        "Contract": payload.contract,
-        "InternetService": payload.internet_service,
-        "TechSupport": payload.tech_support,
-        "OnlineSecurity": payload.online_security,
-        "PaymentMethod": payload.payment_method,
-        "PaperlessBilling": payload.paperless_billing,
+        "account_age_days": payload.account_age_days,
+        "monthly_price_usd": payload.monthly_price_usd,
+        "support_tickets_90d": payload.support_tickets_90d,
+        "days_since_last_login": payload.days_since_last_login,
+        "plan_tier": plan,
     }
 
-    df = pd.DataFrame([input_data])
+    df = pd.DataFrame([input_data], columns=FEATURES)
 
     try:
-        prob = float(model.predict_proba(df)[0, 1])
+        probabilities = model.predict_proba(df)[0]
+        classes = list(model.classes_)
+        churn_idx = classes.index(1) if 1 in classes else 1
+        prob = float(probabilities[churn_idx])
     except Exception as exc:
         raise HTTPException(
             status_code=422,
             detail=f"Inference error: {exc}",
         )
 
-    if prob >= 0.7:
+    if prob >= 0.70:
         risk_level = "high"
-    elif prob >= 0.4:
+    elif prob >= 0.40:
         risk_level = "medium"
     else:
         risk_level = "low"
 
     return ChurnResponse(
         churn_probability=round(prob, 4),
-        churn_prediction=prob >= 0.5,
+        churn_prediction=prob >= 0.50,
         risk_level=risk_level,
     )
