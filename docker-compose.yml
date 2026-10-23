@@ -136,6 +136,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CUSTOMER_PROFILE_URL: http://customer-profile:8001
+      CHURN_PREDICTION_URL: http://churn-prediction:8004
+      RETENTION_URL: http://retention:8005
+    depends_on:
+      kafka:
+        condition: service_healthy
+      customer-profile:
+        condition: service_started
+      churn-prediction:
+        condition: service_started
+      retention:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   kafka_data:
