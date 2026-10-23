@@ -85,18 +85,23 @@ def main() -> None:
             event = record.value
             try:
                 data = event["data"]
+                # Require tenant identity on incoming events.
+                tenant_id = data["tenant_id"]
                 result = analyze_sentiment(data["message"])
+                # Preserve tenant identity in the downstream event.
                 output_event = {
                     "event_id": event.get("event_id"),
                     "event_type": OUTPUT_TOPIC,
                     "data": {
                         "feedback_id": data["feedback_id"],
+                        "tenant_id": tenant_id,
                         "customer_id": data["customer_id"],
                         **result,
                     },
                 }
                 save_result({
                     "feedback_id": data["feedback_id"],
+                    "tenant_id": tenant_id,
                     "customer_id": data["customer_id"],
                     "message": data["message"],
                     **result,
@@ -105,15 +110,18 @@ def main() -> None:
                     OUTPUT_TOPIC,
                     value=output_event,
                 ).get(timeout=15)
+                # Commit only after persistence and publishing succeed.
                 consumer.commit()
                 logger.info(
-                    "Processed feedback %s (sentiment: %s, compound: %.2f)",
+                    "Processed feedback %s for tenant %s "
+                    "(sentiment: %s, compound: %.2f)",
                     data["feedback_id"],
+                    tenant_id,
                     result["sentiment"],
                     result["compound_score"],
                 )
-            except Exception as exc:
-                logger.error("Error processing record: %s", exc)
+            except Exception:
+                logger.exception("Error processing record")
     finally:
         consumer.close()
         producer.close()
