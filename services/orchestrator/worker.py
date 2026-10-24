@@ -2,13 +2,13 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+import jwt
 from kafka import KafkaConsumer, KafkaProducer
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +33,11 @@ RETENTION_URL = os.getenv(
     "RETENTION_URL", "http://retention:8005"
 ).rstrip("/")
 
+JWT_SECRET_KEY = os.getenv(
+    "JWT_SECRET_KEY", "customer_intelligence_super_secret_jwt_key_2026"
+)
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+
 VALID_PLANS = {"free", "starter", "professional", "enterprise"}
 
 
@@ -44,10 +49,29 @@ class DependencyError(Exception):
     """A downstream service or network request failed."""
 
 
-def request_json(url: str, payload: dict | None = None) -> dict:
+def create_service_token(tenant_id: str) -> str:
+    """Generate an internal service Bearer token for inter-service calls."""
+    payload = {
+        "sub": "orchestrator",
+        "tenant_id": str(tenant_id),
+        "role": "internal_service",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+
+def request_json(
+    url: str,
+    payload: dict | None = None,
+    token: str | None = None,
+) -> dict:
     """Make a JSON HTTP request and classify permanent vs transient errors."""
     body = None
     headers = {"Accept": "application/json"}
+
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
 
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
@@ -186,11 +210,11 @@ def process_event(event: dict) -> None:
             "Sentiment result is missing from the event."
         )
 
-    # Fetch only the customer belonging to this tenant.
-    query = urlencode({"tenant_id": tenant_id})
+    # Fetch customer using authenticated internal service token
+    token = create_service_token(tenant_id)
     profile = request_json(
-        f"{CUSTOMER_PROFILE_URL}/api/v1/customers/"
-        f"{customer_id}?{query}"
+        f"{CUSTOMER_PROFILE_URL}/api/v1/customers/{customer_id}",
+        token=token,
     )
 
     # Convert profile data to the churn model's feature contract.

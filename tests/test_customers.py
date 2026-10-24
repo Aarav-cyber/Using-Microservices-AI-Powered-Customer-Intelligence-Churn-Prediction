@@ -1,4 +1,3 @@
-
 import uuid
 
 import pytest
@@ -7,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.auth import create_access_token
 from app.database import Base, get_db
 from app.main import app
 
@@ -49,6 +49,12 @@ def tenant_id():
     return str(uuid.uuid4())
 
 
+@pytest.fixture
+def auth_headers(tenant_id):
+    token = create_access_token(tenant_id=tenant_id)
+    return {"Authorization": f"Bearer {token}"}
+
+
 def customer_payload(tenant_id, external_id="customer-001"):
     return {
         "tenant_id": tenant_id,
@@ -68,10 +74,41 @@ def test_health(client):
     assert response.json()["status"] == "ok"
 
 
-def test_create_customer(client, tenant_id):
+def test_auth_token_endpoint(client, tenant_id):
+    response = client.post(
+        "/api/v1/auth/token",
+        json={"tenant_id": tenant_id, "user_id": "test_user"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["tenant_id"] == tenant_id
+
+
+def test_missing_token_returns_unauthorized(client, tenant_id):
     response = client.post(
         "/api/v1/customers",
         json=customer_payload(tenant_id),
+    )
+    assert response.status_code == 401
+    assert "Missing Bearer authentication token" in response.json()["detail"]
+
+
+def test_invalid_token_returns_unauthorized(client, tenant_id):
+    response = client.get(
+        "/api/v1/customers",
+        headers={"Authorization": "Bearer invalid.token.value"},
+    )
+    assert response.status_code == 401
+    assert "Invalid authentication token" in response.json()["detail"]
+
+
+def test_create_customer(client, tenant_id, auth_headers):
+    response = client.post(
+        "/api/v1/customers",
+        json=customer_payload(tenant_id),
+        headers=auth_headers,
     )
 
     assert response.status_code == 201
@@ -85,68 +122,86 @@ def test_create_customer(client, tenant_id):
     assert "created_at" in data
 
 
-def test_get_customer(client, tenant_id):
+def test_cross_tenant_create_is_forbidden(client, tenant_id, auth_headers):
+    another_tenant = str(uuid.uuid4())
+    response = client.post(
+        "/api/v1/customers",
+        json=customer_payload(another_tenant),
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
+    assert "Forbidden" in response.json()["detail"]
+
+
+def test_get_customer(client, tenant_id, auth_headers):
     created = client.post(
         "/api/v1/customers",
         json=customer_payload(tenant_id),
+        headers=auth_headers,
     ).json()
 
     response = client.get(
         f"/api/v1/customers/{created['id']}",
-        params={"tenant_id": tenant_id},
+        headers=auth_headers,
     )
 
     assert response.status_code == 200
     assert response.json()["id"] == created["id"]
 
 
-def test_customer_isolation(client, tenant_id):
+def test_cross_tenant_access_is_forbidden_or_not_found(client, tenant_id, auth_headers):
     created = client.post(
         "/api/v1/customers",
         json=customer_payload(tenant_id),
+        headers=auth_headers,
     ).json()
 
     another_tenant = str(uuid.uuid4())
+    another_token = create_access_token(tenant_id=another_tenant)
+    another_headers = {"Authorization": f"Bearer {another_token}"}
 
+    # Calling with another tenant's credentials to fetch Tenant A's customer returns 404
     response = client.get(
         f"/api/v1/customers/{created['id']}",
-        params={"tenant_id": another_tenant},
+        headers=another_headers,
     )
-
     assert response.status_code == 404
 
 
-def test_duplicate_external_id_returns_conflict(client, tenant_id):
+def test_duplicate_external_id_returns_conflict(client, tenant_id, auth_headers):
     payload = customer_payload(tenant_id)
 
-    first = client.post("/api/v1/customers", json=payload)
-    second = client.post("/api/v1/customers", json=payload)
+    first = client.post("/api/v1/customers", json=payload, headers=auth_headers)
+    second = client.post("/api/v1/customers", json=payload, headers=auth_headers)
 
     assert first.status_code == 201
     assert second.status_code == 409
 
 
-def test_negative_tenure_is_rejected(client, tenant_id):
+def test_negative_tenure_is_rejected(client, tenant_id, auth_headers):
     payload = customer_payload(tenant_id)
     payload["tenure_months"] = -1
 
     response = client.post(
         "/api/v1/customers",
         json=payload,
+        headers=auth_headers,
     )
 
     assert response.status_code == 422
 
 
-def test_update_customer(client, tenant_id):
+def test_update_customer(client, tenant_id, auth_headers):
     created = client.post(
         "/api/v1/customers",
         json=customer_payload(tenant_id),
+        headers=auth_headers,
     ).json()
 
     response = client.patch(
         f"/api/v1/customers/{created['id']}",
-        params={"tenant_id": tenant_id},
+        headers=auth_headers,
         json={
             "usage_30d": 75.0,
             "support_tickets_90d": 3,
@@ -159,25 +214,32 @@ def test_update_customer(client, tenant_id):
     assert response.json()["tenure_months"] == 12
 
 
-def test_list_customers_is_tenant_scoped(client, tenant_id):
+def test_list_customers_is_tenant_scoped(client, tenant_id, auth_headers):
     client.post(
         "/api/v1/customers",
         json=customer_payload(tenant_id, "customer-001"),
+        headers=auth_headers,
     )
     client.post(
         "/api/v1/customers",
         json=customer_payload(tenant_id, "customer-002"),
+        headers=auth_headers,
     )
 
     another_tenant = str(uuid.uuid4())
+    another_token = create_access_token(tenant_id=another_tenant)
+    another_headers = {"Authorization": f"Bearer {another_token}"}
+
     client.post(
         "/api/v1/customers",
         json=customer_payload(another_tenant, "customer-003"),
+        headers=another_headers,
     )
 
     response = client.get(
         "/api/v1/customers",
-        params={"tenant_id": tenant_id, "limit": 1},
+        params={"limit": 1},
+        headers=auth_headers,
     )
 
     assert response.status_code == 200
@@ -185,7 +247,8 @@ def test_list_customers_is_tenant_scoped(client, tenant_id):
 
     all_customers = client.get(
         "/api/v1/customers",
-        params={"tenant_id": tenant_id, "limit": 100},
+        params={"limit": 100},
+        headers=auth_headers,
     )
 
     assert len(all_customers.json()) == 2

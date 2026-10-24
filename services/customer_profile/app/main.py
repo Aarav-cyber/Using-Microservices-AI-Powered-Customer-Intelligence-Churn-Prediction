@@ -1,26 +1,49 @@
-
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth import TenantContext, create_access_token, get_current_tenant
 from app.database import get_db
 from app.models import Customer
 from app.schemas import CustomerCreate, CustomerRead, CustomerUpdate
 
 app = FastAPI(
     title="Customer Profile Service",
-    description="Customer data API for the Customer Intelligence platform.",
-    version="1.0.0",
+    description="Customer data API with JWT tenant authentication for the Customer Intelligence platform.",
+    version="2.0.0",
 )
+
+
+class TokenRequest(BaseModel):
+    tenant_id: uuid.UUID
+    user_id: str = "tenant_user"
+    role: str = "user"
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    tenant_id: uuid.UUID
 
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "customer-profile"}
+
+
+@app.post("/api/v1/auth/token", response_model=TokenResponse)
+def generate_token(payload: TokenRequest):
+    token = create_access_token(
+        tenant_id=payload.tenant_id,
+        user_id=payload.user_id,
+        role=payload.role,
+    )
+    return TokenResponse(access_token=token, tenant_id=payload.tenant_id)
 
 
 @app.post(
@@ -30,9 +53,17 @@ def health():
 )
 def create_customer(
     payload: CustomerCreate,
+    current_tenant: TenantContext = Depends(get_current_tenant),
     db: Session = Depends(get_db),
 ):
+    if payload.tenant_id != current_tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: Cannot create customer for tenant '{payload.tenant_id}' using credentials for tenant '{current_tenant.tenant_id}'.",
+        )
+
     customer = Customer(**payload.model_dump())
+    customer.tenant_id = current_tenant.tenant_id
     db.add(customer)
 
     try:
@@ -54,14 +85,21 @@ def create_customer(
     response_model=list[CustomerRead],
 )
 def list_customers(
-    tenant_id: uuid.UUID,
+    current_tenant: TenantContext = Depends(get_current_tenant),
+    tenant_id: uuid.UUID | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
+    if tenant_id and tenant_id != current_tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Cross-tenant query not permitted.",
+        )
+
     statement = (
         select(Customer)
-        .where(Customer.tenant_id == tenant_id)
+        .where(Customer.tenant_id == current_tenant.tenant_id)
         .order_by(Customer.created_at.desc(), Customer.id)
         .offset(skip)
         .limit(limit)
@@ -76,13 +114,20 @@ def list_customers(
 )
 def get_customer(
     customer_id: uuid.UUID,
-    tenant_id: uuid.UUID,
+    current_tenant: TenantContext = Depends(get_current_tenant),
+    tenant_id: uuid.UUID | None = None,
     db: Session = Depends(get_db),
 ):
+    if tenant_id and tenant_id != current_tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Cross-tenant access not permitted.",
+        )
+
     customer = db.scalar(
         select(Customer).where(
             Customer.id == customer_id,
-            Customer.tenant_id == tenant_id,
+            Customer.tenant_id == current_tenant.tenant_id,
         )
     )
 
@@ -102,13 +147,20 @@ def get_customer(
 def update_customer(
     customer_id: uuid.UUID,
     payload: CustomerUpdate,
-    tenant_id: uuid.UUID,
+    current_tenant: TenantContext = Depends(get_current_tenant),
+    tenant_id: uuid.UUID | None = None,
     db: Session = Depends(get_db),
 ):
+    if tenant_id and tenant_id != current_tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Cross-tenant access not permitted.",
+        )
+
     customer = db.scalar(
         select(Customer).where(
             Customer.id == customer_id,
-            Customer.tenant_id == tenant_id,
+            Customer.tenant_id == current_tenant.tenant_id,
         )
     )
 
@@ -126,7 +178,6 @@ def update_customer(
             detail="Provide at least one field to update",
         )
 
-    # Numeric database fields are not nullable.
     non_nullable_fields = {
         "tenure_months",
         "monthly_spend",
@@ -167,13 +218,20 @@ def update_customer(
 )
 def delete_customer(
     customer_id: uuid.UUID,
-    tenant_id: uuid.UUID,
+    current_tenant: TenantContext = Depends(get_current_tenant),
+    tenant_id: uuid.UUID | None = None,
     db: Session = Depends(get_db),
 ):
+    if tenant_id and tenant_id != current_tenant.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Cross-tenant access not permitted.",
+        )
+
     customer = db.scalar(
         select(Customer).where(
             Customer.id == customer_id,
-            Customer.tenant_id == tenant_id,
+            Customer.tenant_id == current_tenant.tenant_id,
         )
     )
 

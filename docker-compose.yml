@@ -56,6 +56,8 @@ services:
       context: ./services/customer_profile
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-customer_intelligence_super_secret_jwt_key_2026}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
     ports:
       - "127.0.0.1:8001:8001"
     volumes:
@@ -76,6 +78,8 @@ services:
       DATABASE_URL: sqlite:////data/feedback.db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CUSTOMER_PROFILE_URL: http://customer-profile:8001
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-customer_intelligence_super_secret_jwt_key_2026}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
     ports:
       - "127.0.0.1:8002:8002"
     volumes:
@@ -144,6 +148,8 @@ services:
       CUSTOMER_PROFILE_URL: http://customer-profile:8001
       CHURN_PREDICTION_URL: http://churn-prediction:8004
       RETENTION_URL: http://retention:8005
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-customer_intelligence_super_secret_jwt_key_2026}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
     depends_on:
       kafka:
         condition: service_healthy

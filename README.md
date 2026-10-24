@@ -52,6 +52,7 @@ flowchart TD
 
 ## Key Features
 
+- **Multi-Tenant JWT Authentication & Authorization**: Client-supplied tenant IDs alone are never trusted. All ingress requests require a verified JWT Bearer token signed with HMAC-SHA256 (`HS256`). Tenant identity is derived securely from token claims, blocking cross-tenant spoofing and access attempts with `401 Unauthorized` or `403 Forbidden`. Internal microservices pass short-lived service tokens (`role: "internal_service"`).
 - **Multi-Tenant Boundary Enforcement**: Every feedback submission strictly validates `tenant_id` and `customer_id` against the Customer Profile service before persistence.
 - **SaaS Churn Machine Learning Model**: Scikit-learn classification pipeline trained on account age, monthly spend, support tickets, login recency, and subscription tier (`free`, `starter`, `professional`, `enterprise`).
 - **Resilient Orchestration with DLQ**: The orchestrator classifies failures into transient retries (network blips, 5xx) and permanent failures (missing fields, invalid plan tiers), automatically routing bad data to `sentiment.orchestration.dlq`.
@@ -81,6 +82,8 @@ POSTGRES_DB=customer_profiles
 POSTGRES_USER=customer_app
 POSTGRES_PASSWORD=local_dev_password_change_me
 DATABASE_URL=postgresql+psycopg://customer_app:local_dev_password_change_me@db:5432/customer_profiles
+JWT_SECRET_KEY=customer_intelligence_super_secret_jwt_key_2026
+JWT_ALGORITHM=HS256
 ```
 
 ### 2. Start the Platform
@@ -103,9 +106,19 @@ docker compose ps
 
 Follow these steps to trace a complete customer event through the system.
 
-### Step 1: Create a Customer Profile
+### Step 1: Obtain a JWT Bearer Token
 
-Create a customer belonging to tenant `3fa85f64-5717-4562-b3fc-2c963f66afa6`:
+Generate a JWT token for tenant `3fa85f64-5717-4562-b3fc-2c963f66afa6`:
+
+```powershell
+$tokenResp = Invoke-RestMethod -Uri "http://localhost:8001/api/v1/auth/token" -Method Post -ContentType "application/json" -Body '{"tenant_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"}'
+$token = $tokenResp.access_token
+$headers = @{ Authorization = "Bearer $token" }
+```
+
+### Step 2: Create a Customer Profile
+
+Create a customer belonging to tenant `3fa85f64-5717-4562-b3fc-2c963f66afa6` using the authenticated token:
 
 ```powershell
 $customer = @{
@@ -118,14 +131,14 @@ $customer = @{
     last_active_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 } | ConvertTo-Json
 
-$custResp = Invoke-RestMethod -Uri "http://localhost:8001/api/v1/customers" -Method Post -ContentType "application/json" -Body $customer
+$custResp = Invoke-RestMethod -Uri "http://localhost:8001/api/v1/customers" -Method Post -ContentType "application/json" -Headers $headers -Body $customer
 $customerId = $custResp.id
 Write-Host "Created Customer ID: $customerId"
 ```
 
-### Step 2: Submit Customer Feedback
+### Step 3: Submit Customer Feedback
 
-Submit feedback using the generated `customerId` and `tenant_id`:
+Submit feedback using the generated `customerId` and authenticated headers:
 
 ```powershell
 $feedback = @{
@@ -135,10 +148,10 @@ $feedback = @{
     channel = "web"
 } | ConvertTo-Json
 
-Invoke-RestMethod -Uri "http://localhost:8002/api/v1/feedback" -Method Post -ContentType "application/json" -Body $feedback | ConvertTo-Json
+Invoke-RestMethod -Uri "http://localhost:8002/api/v1/feedback" -Method Post -ContentType "application/json" -Headers $headers -Body $feedback | ConvertTo-Json
 ```
 
-### Step 3: Inspect Event Processing Across Services
+### Step 4: Inspect Event Processing Across Services
 
 1. **Sentiment Worker:**
    ```powershell
