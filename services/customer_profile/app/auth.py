@@ -9,9 +9,9 @@ from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 JWT_SECRET_KEY = os.getenv(
-    "JWT_SECRET_KEY", "customer_intelligence_super_secret_jwt_key_2026"
+    "JWT_SECRET_KEY"
 )
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM")
 
 security = HTTPBearer(auto_error=False)
 
