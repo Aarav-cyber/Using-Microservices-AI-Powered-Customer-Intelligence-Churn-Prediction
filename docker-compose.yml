@@ -76,14 +76,25 @@ services:
       context: ./services/feedback_ingestion
     environment:
       DATABASE_URL: sqlite:////data/feedback.db
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+      KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-SCRAM-SHA-256}
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:-}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:-}
+      KAFKA_SSL_CA_LOCATION: ${KAFKA_SSL_CA_LOCATION:-ca.pem}
+      KAFKA_CA_CERT: ${KAFKA_CA_CERT:-}
       CUSTOMER_PROFILE_URL: http://customer-profile:8001
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-customer_intelligence_super_secret_jwt_key_2026}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "127.0.0.1:8002:8002"
     volumes:
       - feedback_data:/data
+      - ./services/feedback_ingestion/app:/app/app
+      - ./ca.pem:/app/ca.pem:ro
     depends_on:
       customer-profile:
         condition: service_started
