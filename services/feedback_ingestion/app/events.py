@@ -61,6 +61,7 @@ def get_producer():
             "retries": 3,
             "max_block_ms": 10000,
             "request_timeout_ms": 10000,
+            "api_version": (2, 5, 0),
         }
 
         if KAFKA_SECURITY_PROTOCOL == "SASL_SSL":
