@@ -114,6 +114,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  sentiment-worker:
+    build:
+      context: ./services/sentiment_analysis
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: sqlite:////data/sentiment.db
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL}
+      KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM}
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD}
+      KAFKA_SSL_CA_LOCATION: /app/ca.pem
+    volumes:
+      - sentiment_data:/data
+      - ./services/sentiment_analysis/app:/app/app
+      - ./ca.pem:/app/ca.pem:ro
+    restart: unless-stopped
+
   churn-prediction:
     build:
       context: ./services/churn_prediction

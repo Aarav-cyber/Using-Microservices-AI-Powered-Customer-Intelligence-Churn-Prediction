@@ -63,6 +63,11 @@ def validate_customer_tenant(customer_id: str, tenant_id: str) -> None:
         )
 
     if response.status_code != status.HTTP_200_OK:
+        print(
+            f"Customer Profile validation failed: "
+            f"status={response.status_code}, "
+            f"body={response.text}"
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to validate customer with Customer Profile service.",
