@@ -11,6 +11,12 @@ BOOTSTRAP_SERVERS = os.getenv(
     "KAFKA_BOOTSTRAP_SERVERS",
     "localhost:29092",
 )
+SECURITY_PROTOCOL = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+SASL_MECHANISM = os.getenv("KAFKA_SASL_MECHANISM", "SCRAM-SHA-256")
+SASL_USERNAME = os.getenv("KAFKA_SASL_USERNAME")
+SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD")
+SSL_CA_LOCATION = os.getenv("KAFKA_SSL_CA_LOCATION")
+
 TOPIC = "retention.recommended"
 GROUP_ID = "notification-worker-v1"
 
@@ -19,12 +25,26 @@ def get_consumer():
     for attempt in range(1, 11):
         try:
             logger.info("Connecting to Kafka at %s (attempt %d/10)...", BOOTSTRAP_SERVERS, attempt)
+            kafka_config = {
+                "bootstrap_servers": BOOTSTRAP_SERVERS,
+                "group_id": GROUP_ID,
+                "auto_offset_reset": "earliest",
+                "enable_auto_commit": False,
+                "api_version": (2, 5, 0),
+            }
+
+            if SECURITY_PROTOCOL == "SASL_SSL":
+                kafka_config.update({
+                    "security_protocol": SECURITY_PROTOCOL,
+                    "sasl_mechanism": SASL_MECHANISM,
+                    "sasl_plain_username": SASL_USERNAME,
+                    "sasl_plain_password": SASL_PASSWORD,
+                    "ssl_cafile": SSL_CA_LOCATION,
+                })
+
             consumer = KafkaConsumer(
                 TOPIC,
-                bootstrap_servers=BOOTSTRAP_SERVERS,
-                group_id=GROUP_ID,
-                auto_offset_reset="earliest",
-                enable_auto_commit=False,
+                **kafka_config,
                 value_deserializer=lambda value: json.loads(
                     value.decode("utf-8")
                 ),
