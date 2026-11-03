@@ -26,17 +26,35 @@ KAFKA_SERVERS = os.getenv(
     "localhost:29092",
 )
 
+SECURITY_PROTOCOL = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+SASL_MECHANISM = os.getenv("KAFKA_SASL_MECHANISM", "SCRAM-SHA-256")
+SASL_USERNAME = os.getenv("KAFKA_SASL_USERNAME")
+SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD")
+SSL_CA_LOCATION = os.getenv("KAFKA_SSL_CA_LOCATION")
+
 
 def get_producer():
     global producer
 
     if producer is None:
-        producer = KafkaProducer(
-            bootstrap_servers=KAFKA_SERVERS,
-            value_serializer=lambda value: json.dumps(value).encode("utf-8"),
-            acks="all",
-            retries=3,
-        )
+        kafka_config = {
+            "bootstrap_servers": KAFKA_SERVERS,
+            "value_serializer": lambda value: json.dumps(value).encode("utf-8"),
+            "acks": "all",
+            "retries": 3,
+            "api_version": (2, 5, 0),
+        }
+
+        if SECURITY_PROTOCOL == "SASL_SSL":
+            kafka_config.update({
+                "security_protocol": SECURITY_PROTOCOL,
+                "sasl_mechanism": SASL_MECHANISM,
+                "sasl_plain_username": SASL_USERNAME,
+                "sasl_plain_password": SASL_PASSWORD,
+                "ssl_cafile": SSL_CA_LOCATION,
+            })
+
+        producer = KafkaProducer(**kafka_config)
 
     return producer
 
