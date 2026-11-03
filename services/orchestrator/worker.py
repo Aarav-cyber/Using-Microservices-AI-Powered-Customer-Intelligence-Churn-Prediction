@@ -17,8 +17,15 @@ logging.basicConfig(
 logger = logging.getLogger("orchestrator")
 
 KAFKA_SERVERS = os.getenv(
-    "KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"
+    "KAFKA_BOOTSTRAP_SERVERS",
+    "localhost:29092",
 )
+
+SECURITY_PROTOCOL = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+SASL_MECHANISM = os.getenv("KAFKA_SASL_MECHANISM", "SCRAM-SHA-256")
+SASL_USERNAME = os.getenv("KAFKA_SASL_USERNAME")
+SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD")
+SSL_CA_LOCATION = os.getenv("KAFKA_SSL_CA_LOCATION")
 INPUT_TOPIC = "sentiment.completed"
 DLQ_TOPIC = "sentiment.orchestration.dlq"
 GROUP_ID = "customer-intelligence-orchestrator"
@@ -268,22 +275,32 @@ def main() -> None:
                 attempt,
             )
 
+            kafka_config = {
+                "bootstrap_servers": KAFKA_SERVERS,
+                "security_protocol": SECURITY_PROTOCOL,
+                "api_version": (2, 5, 0),
+            }
+
+            if SECURITY_PROTOCOL == "SASL_SSL":
+                kafka_config.update({
+                    "sasl_mechanism": SASL_MECHANISM,
+                    "sasl_plain_username": SASL_USERNAME,
+                    "sasl_plain_password": SASL_PASSWORD,
+                    "ssl_cafile": SSL_CA_LOCATION,
+                })
+
             consumer = KafkaConsumer(
                 INPUT_TOPIC,
-                bootstrap_servers=KAFKA_SERVERS,
+                **kafka_config,
                 group_id=GROUP_ID,
                 auto_offset_reset="earliest",
                 enable_auto_commit=False,
-                value_deserializer=lambda value: json.loads(
-                    value.decode("utf-8")
-                ),
+                value_deserializer=lambda value: json.loads(value.decode("utf-8")),
             )
 
             producer = KafkaProducer(
-                bootstrap_servers=KAFKA_SERVERS,
-                value_serializer=lambda value: json.dumps(
-                    value
-                ).encode("utf-8"),
+                **kafka_config,
+                value_serializer=lambda value: json.dumps(value).encode("utf-8"),
                 acks="all",
                 retries=3,
             )
