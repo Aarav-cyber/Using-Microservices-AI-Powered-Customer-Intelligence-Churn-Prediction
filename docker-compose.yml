@@ -185,9 +185,9 @@ services:
       KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME}
       KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD}
       KAFKA_SSL_CA_LOCATION: /app/ca.pem
-      CUSTOMER_PROFILE_URL: ${CUSTOMER_PROFILE_URL:-http://customer-profile:8001}
-      CHURN_PREDICTION_URL: http://churn-prediction:8004
-      RETENTION_URL: http://retention:8005
+      CUSTOMER_PROFILE_URL: https://customer-profile-api.onrender.com
+      CHURN_PREDICTION_URL: https://customer-intelligence-churn.onrender.com
+      RETENTION_URL: https://retention-api.onrender.com
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-customer_intelligence_super_secret_jwt_key_2026}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
     volumes:
