@@ -202,6 +202,18 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  dlq-replay:
+    build:
+      context: ./services/orchestrator
+    env_file:
+      - .env
+    environment:
+      KAFKA_SSL_CA_LOCATION: /app/ca.pem
+    volumes:
+      - ./services/orchestrator:/app
+      - ./ca.pem:/app/ca.pem:ro
+    command: python replay_dlq.py
+
 volumes:
   postgres_data:
   kafka_data:
